@@ -320,6 +320,9 @@ class RemoteDbManager {
    * - LapsToGo changed
    * - TimeOfDay, TimeToGo, or RaceTime jumped more than 1 second
    * - FlagStatus changed
+   * 
+   * IMPORTANT: lastFCommand is ALWAYS updated with the new command,
+   * comparison is done against the PREVIOUS command.
    */
   private shouldLogFCommand(command: CommandData): boolean {
     const fCmd = command as {
@@ -330,62 +333,58 @@ class RemoteDbManager {
       FlagStatus: string;
     };
 
+    // Default: don't log, will update lastFCommand at the end
+    let shouldLog = false;
+
     // First $F command - always log
     if (!this.lastFCommand) {
-      this.lastFCommand = {
-        LapsToGo: fCmd.LapsToGo,
-        TimeOfDay: fCmd.TimeOfDay,
-        TimeToGo: fCmd.TimeToGo,
-        RaceTime: fCmd.RaceTime,
-        FlagStatus: fCmd.FlagStatus,
-        timestamp: Date.now(),
+      shouldLog = true;
+    } else {
+      // Compare with previous command
+      
+      // Check LapsToGo change
+      if (fCmd.LapsToGo !== this.lastFCommand.LapsToGo) {
+        shouldLog = true;
+      }
+
+      // Check FlagStatus change
+      if (fCmd.FlagStatus !== this.lastFCommand.FlagStatus) {
+        shouldLog = true;
+      }
+
+      // Check time jump (more than 1 second)
+      // Parse time strings like "12:34:56.789" to seconds
+      const parseTimeToSeconds = (timeStr: string): number => {
+        if (!timeStr) return 0;
+        const parts = timeStr.split(":");
+        if (parts.length < 3) return 0;
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        const seconds = parseFloat(parts[2]) || 0;
+        return hours * 3600 + minutes * 60 + seconds;
       };
-      return true;
+
+      const timeOfDayDiff = Math.abs(parseTimeToSeconds(fCmd.TimeOfDay) - parseTimeToSeconds(this.lastFCommand.TimeOfDay));
+      const timeToGoDiff = Math.abs(parseTimeToSeconds(fCmd.TimeToGo) - parseTimeToSeconds(this.lastFCommand.TimeToGo));
+      const raceTimeDiff = Math.abs(parseTimeToSeconds(fCmd.RaceTime) - parseTimeToSeconds(this.lastFCommand.RaceTime));
+
+      // If any time jumped more than 1 second
+      if (timeOfDayDiff > 1 || timeToGoDiff > 1 || raceTimeDiff > 1) {
+        shouldLog = true;
+      }
     }
 
-    // Check LapsToGo change
-    if (fCmd.LapsToGo !== this.lastFCommand.LapsToGo) {
-      this.lastFCommand = { ...this.lastFCommand, LapsToGo: fCmd.LapsToGo };
-      return true;
-    }
-
-    // Check FlagStatus change
-    if (fCmd.FlagStatus !== this.lastFCommand.FlagStatus) {
-      this.lastFCommand = { ...this.lastFCommand, FlagStatus: fCmd.FlagStatus };
-      return true;
-    }
-
-    // Check time jump (more than 1 second)
-    // Parse time strings like "12:34:56.789" to seconds
-    const parseTimeToSeconds = (timeStr: string): number => {
-      if (!timeStr) return 0;
-      const parts = timeStr.split(":");
-      if (parts.length < 3) return 0;
-      const hours = parseInt(parts[0]) || 0;
-      const minutes = parseInt(parts[1]) || 0;
-      const seconds = parseFloat(parts[2]) || 0;
-      return hours * 3600 + minutes * 60 + seconds;
+    // ALWAYS update lastFCommand with the new command
+    this.lastFCommand = {
+      LapsToGo: fCmd.LapsToGo,
+      TimeOfDay: fCmd.TimeOfDay,
+      TimeToGo: fCmd.TimeToGo,
+      RaceTime: fCmd.RaceTime,
+      FlagStatus: fCmd.FlagStatus,
+      timestamp: Date.now(),
     };
 
-    const timeOfDayDiff = Math.abs(parseTimeToSeconds(fCmd.TimeOfDay) - parseTimeToSeconds(this.lastFCommand.TimeOfDay));
-    const timeToGoDiff = Math.abs(parseTimeToSeconds(fCmd.TimeToGo) - parseTimeToSeconds(this.lastFCommand.TimeToGo));
-    const raceTimeDiff = Math.abs(parseTimeToSeconds(fCmd.RaceTime) - parseTimeToSeconds(this.lastFCommand.RaceTime));
-
-    // If any time jumped more than 1 second
-    if (timeOfDayDiff > 1 || timeToGoDiff > 1 || raceTimeDiff > 1) {
-      this.lastFCommand = {
-        LapsToGo: fCmd.LapsToGo,
-        TimeOfDay: fCmd.TimeOfDay,
-        TimeToGo: fCmd.TimeToGo,
-        RaceTime: fCmd.RaceTime,
-        FlagStatus: fCmd.FlagStatus,
-        timestamp: Date.now(),
-      };
-      return true;
-    }
-
-    // No significant change
-    return false;
+    return shouldLog;
   }
 
   /**
