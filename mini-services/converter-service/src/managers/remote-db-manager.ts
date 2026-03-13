@@ -445,11 +445,64 @@ class RemoteDbManager {
       console.error(`[RemoteDB] Failed to log command $${command.Id}:`, err);
       this.lastError = err instanceof Error ? err.message : String(err);
 
+      // Check if table doesn't exist - try to create it and retry
+      if (this.isTableNotFoundError(err, tableName)) {
+        console.log(`[RemoteDB] Table ${tableName} not found, creating it...`);
+        // Remove from createdTables so it will be recreated
+        this.createdTables.delete(tableName);
+        
+        try {
+          // Create the table
+          await this.createTable(tableName, TABLE_SCHEMAS[tableName] || []);
+          this.createdTables.add(tableName);
+          
+          // Retry the insert
+          await this.insertCommand(tableName, sourceId, command);
+          this.commandsLogged++;
+          this.lastError = null;
+          console.log(`[RemoteDB] Table ${tableName} created and command logged successfully`);
+          return;
+        } catch (retryErr) {
+          console.error(`[RemoteDB] Failed to create table ${tableName} and retry:`, retryErr);
+          this.lastError = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        }
+      }
+
       // Connection lost? Add to offline cache
       if (this.isConnectionError(err)) {
         this.connected = false;
         this.addToOfflineCache(sourceId, command);
       }
+    }
+  }
+
+  /**
+   * Insert a command into a table (used for retry after table creation)
+   */
+  private async insertCommand(tableName: string, sourceId: string, command: CommandData): Promise<void> {
+    if (!this.config) return;
+
+    // Build INSERT statement
+    const columns = ["source_id", "raw_data"];
+    const values: (string | number | null)[] = [sourceId, JSON.stringify(command)];
+    const placeholders = ["?", "?"];
+
+    // Add specific columns from TABLE_SCHEMAS
+    const tableColumns = TABLE_SCHEMAS[tableName] || [];
+    for (const col of tableColumns) {
+      columns.push(col);
+      values.push(command[col] !== undefined ? String(command[col]) : null);
+      placeholders.push("?");
+    }
+
+    const sql = `INSERT INTO \`${tableName}\` (${columns.map((c) => `\`${c}\``).join(", ")}) VALUES (${placeholders.join(", ")})`;
+
+    if (this.config.type === "mysql" && this.mysqlPool) {
+      await this.mysqlPool.execute(sql, values);
+    } else if (this.pgPool) {
+      // PostgreSQL version
+      const pgSQL = sql.replace(/\?/g, (_, i) => `$${i + 1}`).replace(/`/g, '"');
+      await this.pgPool.query(pgSQL, values);
     }
   }
 
@@ -465,6 +518,25 @@ class RemoteDbManager {
         msg.includes("etimedout") ||
         msg.includes("lost") ||
         msg.includes("closed")
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Check if error is a "table doesn't exist" error
+   */
+  private isTableNotFoundError(err: unknown, tableName: string): boolean {
+    if (err instanceof Error) {
+      const msg = err.message.toLowerCase();
+      const tableLower = tableName.toLowerCase();
+      // MySQL: Table 'db.table' doesn't exist
+      // PostgreSQL: relation "table" does not exist
+      return (
+        msg.includes("doesn't exist") ||
+        msg.includes("does not exist") ||
+        msg.includes(`table '${tableLower}'`) ||
+        msg.includes(`relation "${tableLower}"`)
       );
     }
     return false;
