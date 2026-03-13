@@ -1,0 +1,410 @@
+// RMonitor Converter - Database Schema
+// Supports: Admin auth, TCP sources, WS servers, Roles, Clients, Logging
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Authentication & Authorization
+// ============================================
+
+/// Admin users for web panel access
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("admin") // "superadmin", "admin", "operator"
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+/// API keys for WebSocket client authentication
+model ApiKey {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  roleId      String
+  role        WsClientRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("api_keys")
+}
+
+/// Roles for WebSocket clients with permissions
+model WsClientRole {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  description      String?
+  canSend          Boolean  @default(false) // Can send commands back to TCP
+  canReceive       Boolean  @default(true)  // Can receive data from TCP
+  allowedCommands  String   @default("all") // JSON array or "all" for all commands
+  maxConnections   Int      @default(10)    // Max concurrent connections per client
+  rateLimit        Int      @default(100)   // Messages per minute
+  isDefault        Boolean  @default(false) // Default role for new API keys
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  apiKeys ApiKey[]
+
+  @@map("ws_client_roles")
+}
+
+// ============================================
+// TCP Sources (RMonitor servers)
+// ============================================
+
+/// TCP sources - RMonitor servers to connect to
+model TcpSource {
+  id               String   @id @default(cuid())
+  name             String
+  host             String
+  port            Int
+  isEnabled       Boolean  @default(true)
+  autoReconnect   Boolean  @default(true)
+  reconnectDelay  Int      @default(5000) // ms
+  sendEnabled     Boolean  @default(false) // Allow sending commands back to source
+  trustedOnly     Boolean  @default(false) // Only accept commands from trusted sources
+  description     String?
+  lastConnectedAt DateTime?
+  status          String   @default("disconnected") // "connected", "disconnected", "error"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  trustedSources TrustedSource[]
+  wsServerMappings WsServerTcpMapping[]
+
+  @@map("tcp_sources")
+}
+
+/// Trusted sources for sending commands
+model TrustedSource {
+  id          String   @id @default(cuid())
+  tcpSourceId String
+  tcpSource   TcpSource @relation(fields: [tcpSourceId], references: [id], onDelete: Cascade)
+  ipAddress   String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@unique([tcpSourceId, ipAddress])
+  @@map("trusted_sources")
+}
+
+// ============================================
+// WebSocket/WSS Servers
+// ============================================
+
+/// WebSocket/WSS servers for clients to connect
+model WsServer {
+  id               String   @id @default(cuid())
+  name             String
+  port            Int      @unique
+  isEnabled       Boolean  @default(true)
+  useSSL          Boolean  @default(false)
+  sslCertPath     String?
+  sslKeyPath      String?
+  maxClients      Int      @default(100)
+  heartbeatInterval Int    @default(30000) // ms
+  description     String?
+  status          String   @default("stopped") // "running", "stopped"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tcpMappings WsServerTcpMapping[]
+
+  @@map("ws_servers")
+}
+
+/// Mapping between WS servers and TCP sources
+model WsServerTcpMapping {
+  id         String   @id @default(cuid())
+  wsServerId String
+  wsServer   WsServer @relation(fields: [wsServerId], references: [id], onDelete: Cascade)
+  tcpSourceId String
+  tcpSource   TcpSource @relation(fields: [tcpSourceId], references: [id], onDelete: Cascade)
+  priority   Int      @default(0) // Higher = higher priority
+  isEnabled  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([wsServerId, tcpSourceId])
+  @@map("ws_server_tcp_mappings")
+}
+
+// ============================================
+// Logging & Data Storage
+// ============================================
+
+/// Connection logs for audit and debugging
+model ConnectionLog {
+  id           String   @id @default(cuid())
+  type         String   // "tcp_connect", "tcp_disconnect", "ws_connect", "ws_disconnect", "error"
+  sourceType   String   // "tcp_source", "ws_server", "ws_client"
+  sourceId     String?  // ID of the source/server
+  sourceName   String?  // Name for easier identification
+  ipAddress    String?
+  message      String
+  errorDetails String?
+  createdAt    DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([sourceType, sourceId])
+  @@map("connection_logs")
+}
+
+/// Command logs for audit
+model CommandLog {
+  id              String   @id @default(cuid())
+  direction       String   // "tcp_to_ws" or "ws_to_tcp"
+  commandType     String   // $A, $B, $I, etc.
+  tcpSourceId     String?
+  wsClientId      String?
+  rawData         String   // Original RMonitor format
+  convertedData   String   // WebJSON format
+  success         Boolean  @default(true)
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  @@index([direction, createdAt])
+  @@index([commandType, createdAt])
+  @@map("command_logs")
+}
+
+// ============================================
+// System Settings
+// ============================================
+
+/// Global converter settings
+model ConverterSettings {
+  id                    String   @id @default(cuid())
+  key                   String   @unique
+  value                 String
+  description           String?
+  updatedAt             DateTime @updatedAt
+
+  @@map("converter_settings")
+}
+
+// ============================================
+// RMonitor Data Tables (for logging)
+// ============================================
+
+/// $I - Init/Time message
+model RMonitorI {
+  id           String   @id @default(cuid())
+  timeOfDay    String
+  date         String
+  tcpSourceId  String
+  receivedAt   DateTime @default(now())
+
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_i")
+}
+
+/// $E - Extra data
+model RMonitorE {
+  id           String   @id @default(cuid())
+  description  String
+  value        String
+  tcpSourceId  String
+  receivedAt   DateTime @default(now())
+
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_e")
+}
+
+/// $B - Line description
+model RMonitorB {
+  id            String   @id @default(cuid())
+  uniqueNumber  String
+  description   String
+  tcpSourceId   String
+  receivedAt    DateTime @default(now())
+
+  @@index([tcpSourceId, uniqueNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_b")
+}
+
+/// $C - Class description
+model RMonitorC {
+  id            String   @id @default(cuid())
+  uniqueNumber  String
+  description   String
+  tcpSourceId   String
+  receivedAt    DateTime @default(now())
+
+  @@index([tcpSourceId, uniqueNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_c")
+}
+
+/// $A - Competitor registration
+model RMonitorA {
+  id                 String   @id @default(cuid())
+  registrationNumber String
+  number             String
+  transponderNumber  String
+  firstName          String
+  lastName           String
+  nationality        String
+  classNumber        String
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, registrationNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_a")
+}
+
+/// $COMP - Competitor info
+model RMonitorCOMP {
+  id                 String   @id @default(cuid())
+  registrationNumber String
+  number             String
+  classNumber        String
+  firstName          String
+  lastName           String
+  nationality        String
+  additionalData     String?
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, registrationNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_comp")
+}
+
+/// $G - Position
+model RMonitorG {
+  id                 String   @id @default(cuid())
+  position           String
+  registrationNumber String
+  laps               String
+  totalTime          String
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, registrationNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_g")
+}
+
+/// $H - Best lap
+model RMonitorH {
+  id                 String   @id @default(cuid())
+  position           String
+  registrationNumber String
+  bestLap            String
+  bestLaptime        String
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, registrationNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_h")
+}
+
+/// $J - Lap time
+model RMonitorJ {
+  id                 String   @id @default(cuid())
+  registrationNumber String
+  laptime            String
+  totalTime          String
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, registrationNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_j")
+}
+
+/// $F - Flag/Race status
+model RMonitorF {
+  id          String   @id @default(cuid())
+  lapsToGo    String
+  timeToGo    String
+  timeOfDay   String
+  raceTime    String
+  flagStatus  String
+  tcpSourceId String
+  receivedAt  DateTime @default(now())
+
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_f")
+}
+
+/// $DPD - Decoder passing data
+model RMonitorDPD {
+  id                 String   @id @default(cuid())
+  decoderId          String
+  transponder        String
+  registrationNumber String
+  rtcTime            String
+  utcTime            String?
+  stcTime            String?
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, transponder])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_dpd")
+}
+
+/// $DPF - Decoder passing full
+model RMonitorDPF {
+  id              String   @id @default(cuid())
+  decoderId       String
+  controllerId    String?
+  requestId       String?
+  passingNumber   String?
+  transponder     String
+  rtcId           String?
+  rtcTime         String
+  utcTime         String?
+  stcTime         String?
+  strength        String?
+  hits            String?
+  flags           String?
+  tranCode        String?
+  userFlag        String?
+  driverId        String?
+  sport           String?
+  tcpSourceId     String
+  receivedAt      DateTime @default(now())
+
+  @@index([tcpSourceId, transponder])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_dpf")
+}
+
+/// $DSI - Speed/Interval data
+model RMonitorDSI {
+  id                 String   @id @default(cuid())
+  registrationNumber String
+  number             String
+  transponderNumber  String
+  name               String
+  timeOfStay         String
+  speed              String
+  tcpSourceId        String
+  receivedAt         DateTime @default(now())
+
+  @@index([tcpSourceId, registrationNumber])
+  @@index([tcpSourceId, receivedAt])
+  @@map("rmonitor_dsi")
+}

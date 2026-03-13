@@ -1,0 +1,108 @@
+// This schema references the main project's database
+// The converter service only needs read access to certain tables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../../../db/custom.db"
+}
+
+// Minimal models needed by converter service
+model TcpSource {
+  id               String   @id @default(cuid())
+  name             String
+  host             String
+  port             Int
+  isEnabled        Boolean  @default(true)
+  autoReconnect    Boolean  @default(true)
+  reconnectDelay   Int      @default(5000)
+  sendEnabled      Boolean  @default(false)
+  trustedOnly      Boolean  @default(false)
+  description      String?
+  lastConnectedAt  DateTime?
+  status           String   @default("unknown")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  wsServerMappings WsServerTcpMapping[]
+
+  @@map("tcp_sources")
+}
+
+model WsServer {
+  id               String   @id @default(cuid())
+  name             String
+  port             Int      @unique
+  isEnabled        Boolean  @default(true)
+  useSSL           Boolean  @default(false)
+  sslCertPath      String?
+  sslKeyPath       String?
+  maxClients       Int      @default(100)
+  heartbeatInterval Int     @default(30000)
+  description      String?
+  status           String   @default("stopped")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tcpMappings WsServerTcpMapping[]
+
+  @@map("ws_servers")
+}
+
+model WsServerTcpMapping {
+  id          String   @id @default(cuid())
+  wsServerId  String
+  wsServer    WsServer  @relation(fields: [wsServerId], references: [id], onDelete: Cascade)
+  tcpSourceId String
+  tcpSource   TcpSource @relation(fields: [tcpSourceId], references: [id], onDelete: Cascade)
+  priority    Int      @default(0)
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([wsServerId, tcpSourceId])
+  @@map("ws_server_tcp_mappings")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  roleId      String
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("api_keys")
+}
+
+model WsClientRole {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  description     String?
+  canSend         Boolean  @default(false)
+  canReceive      Boolean  @default(true)
+  allowedCommands String   @default("all")
+  maxConnections  Int      @default(10)
+  rateLimit       Int      @default(100)
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("ws_client_roles")
+}
+
+model ConverterSettings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("converter_settings")
+}
