@@ -201,4 +201,5 @@ export interface WsClientInfo {
   canReceive: boolean;
   connectedAt: Date;
   ipAddress: string;
+  expiresAt?: Date | null; // Expiration date for the API key
 }

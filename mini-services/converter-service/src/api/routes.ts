@@ -187,6 +187,7 @@ const routes: Route[] = [
         allowedCommands: string[] | "all";
         canSend: boolean;
         canReceive: boolean;
+        expiresAt?: string | null;
       };
 
       wsServerManager.registerApiKey(data.apiKey, {
@@ -199,6 +200,7 @@ const routes: Route[] = [
         canReceive: data.canReceive,
         connectedAt: new Date(),
         ipAddress: "",
+        expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
       });
 
       jsonResponse(res, {
@@ -206,6 +208,39 @@ const routes: Route[] = [
         data: { message: "API key registered" },
         timestamp: new Date().toISOString(),
       });
+    },
+  },
+
+  // Update last used timestamp for API key
+  {
+    method: "POST",
+    path: "/api/ws/apikeys/:key/used",
+    handler: async (req, res) => {
+      const key = req.url?.split("/")[4];
+      if (!key) {
+        errorResponse(res, 400, "API key required");
+        return;
+      }
+
+      // Update lastUsedAt in database
+      try {
+        const { getPrisma } = await import("../lib/prisma");
+        const prisma = getPrisma();
+        
+        await prisma.apiKey.update({
+          where: { key },
+          data: { lastUsedAt: new Date() },
+        });
+        
+        jsonResponse(res, {
+          success: true,
+          data: { message: "Last used timestamp updated" },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("[API] Error updating lastUsedAt:", err);
+        errorResponse(res, 500, "Failed to update last used timestamp");
+      }
     },
   },
 

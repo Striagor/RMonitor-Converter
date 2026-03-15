@@ -88,11 +88,24 @@ async function loadApiKeysFromDatabase(): Promise<void> {
           canReceive: role.canReceive,
           connectedAt: new Date(),
           ipAddress: "",
+          expiresAt: apiKey.expiresAt,
         });
       }
     }
   } catch (err) {
     console.error("[DB] Error loading API keys:", err);
+  }
+}
+
+async function updateApiKeyLastUsed(key: string): Promise<void> {
+  const prisma = getPrisma();
+  try {
+    await prisma.apiKey.update({
+      where: { key },
+      data: { lastUsedAt: new Date() },
+    });
+  } catch (err) {
+    console.error("[DB] Error updating lastUsedAt:", err);
   }
 }
 

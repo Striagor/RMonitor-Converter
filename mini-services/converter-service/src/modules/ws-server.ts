@@ -41,10 +41,11 @@ interface WsServerInstance {
 
 class MultiWsServerManager {
   private servers: Map<string, WsServerInstance> = new Map();
-  private apiKeys: Map<string, WsClientInfo> = new Map();
+  private apiKeys: Map<string, WsClientInfo & { expiresAt?: Date | null }> = new Map();
   private allClients: Map<string, ConnectedClient> = new Map();
   private recentMessages: Map<string, number> = new Map(); // For deduplication
   private messageDedupWindow = 1000; // 1 second window for dedup
+  private expirationCheckInterval: Timer | null = null;
 
   /**
    * Create and start a WebSocket server
@@ -169,6 +170,13 @@ class MultiWsServerManager {
       return;
     }
 
+    // Check if API key is expired
+    if (clientInfo.expiresAt && new Date(clientInfo.expiresAt) < new Date()) {
+      this.sendError(ws, "API key expired");
+      ws.close(4006, "API key expired");
+      return;
+    }
+
     if (!clientInfo.canReceive) {
       this.sendError(ws, "Receive permission denied");
       ws.close(4003, "Permission denied");
@@ -203,6 +211,11 @@ class MultiWsServerManager {
     this.allClients.set(clientId, client);
 
     console.log(`[WS] Client ${clientId} connected to ${instance.config.name} (role: ${clientInfo.roleName})`);
+
+    // Update lastUsedAt for the API key (async, non-blocking)
+    this.updateApiKeyLastUsed(apiKey).catch(err => {
+      console.error("[WS] Failed to update lastUsedAt:", err);
+    });
 
     // Send init block
     this.sendInitBlock(client);
@@ -437,9 +450,9 @@ class MultiWsServerManager {
   /**
    * Register API key with client info
    */
-  registerApiKey(apiKey: string, info: WsClientInfo): void {
+  registerApiKey(apiKey: string, info: WsClientInfo & { expiresAt?: Date | null }): void {
     this.apiKeys.set(apiKey, info);
-    console.log(`[WS] Registered API key: ${apiKey.substring(0, 12)}...`);
+    console.log(`[WS] Registered API key: ${apiKey.substring(0, 12)}...${info.expiresAt ? ` (expires: ${new Date(info.expiresAt).toISOString()})` : ''}`);
   }
 
   /**
@@ -602,12 +615,62 @@ class MultiWsServerManager {
       heartbeatInterval: 30000,
       tcpMappings: [], // Empty means all TCP sources
     });
+
+    // Start expiration check interval (every minute)
+    if (!this.expirationCheckInterval) {
+      this.expirationCheckInterval = setInterval(() => {
+        this.checkExpiredKeys();
+      }, 60000);
+    }
+  }
+
+  /**
+   * Check for expired API keys and disconnect clients
+   */
+  private checkExpiredKeys(): void {
+    const now = new Date();
+    let expiredCount = 0;
+
+    for (const [apiKey, info] of this.apiKeys) {
+      if (info.expiresAt && new Date(info.expiresAt) < now) {
+        console.log(`[WS] API key ${apiKey.substring(0, 12)}... has expired, disconnecting clients`);
+        this.disconnectClientsByApiKey(apiKey);
+        this.apiKeys.delete(apiKey);
+        expiredCount++;
+      }
+    }
+
+    if (expiredCount > 0) {
+      console.log(`[WS] Disconnected ${expiredCount} expired API keys`);
+    }
+  }
+
+  /**
+   * Update lastUsedAt for an API key
+   */
+  private async updateApiKeyLastUsed(apiKey: string): Promise<void> {
+    try {
+      const response = await fetch(`http://localhost:50004/api/ws/apikeys/${apiKey}/used`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        console.error("[WS] Failed to update lastUsedAt for API key");
+      }
+    } catch (err) {
+      console.error("[WS] Error updating lastUsedAt:", err);
+    }
   }
 
   /**
    * Stop all servers
    */
   stop(): void {
+    // Stop expiration check
+    if (this.expirationCheckInterval) {
+      clearInterval(this.expirationCheckInterval);
+      this.expirationCheckInterval = null;
+    }
+
     for (const [serverId] of this.servers) {
       this.stopServer(serverId);
     }

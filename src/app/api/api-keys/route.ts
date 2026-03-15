@@ -29,7 +29,7 @@ export async function GET() {
 
 // POST - Create new API key
 export async function POST(request: NextRequest) {
-  try {
+    try {
     const body = await request.json();
 
     // Generate API key if not provided
@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
           allowedCommands: apiKey.role.allowedCommands === "all" ? "all" : apiKey.role.allowedCommands.split(","),
           canSend: apiKey.role.canSend,
           canReceive: apiKey.role.canReceive,
+          expiresAt: apiKey.expiresAt?.toISOString() || null,
         });
       } catch (err) {
         console.error("[API Keys] Failed to notify converter:", err);

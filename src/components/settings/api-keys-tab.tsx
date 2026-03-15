@@ -342,6 +342,7 @@ export function ApiKeysTab() {
                   <TableHead>Key</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Expires</TableHead>
                   <TableHead>Last Used</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -387,9 +388,26 @@ export function ApiKeysTab() {
                       <Badge variant="outline">{apiKey.role?.name || "Unknown"}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={apiKey.isActive ? "default" : "secondary"}>
-                        {apiKey.isActive ? "Active" : "Inactive"}
-                      </Badge>
+                      {apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date() ? (
+                        <Badge variant="destructive">Expired</Badge>
+                      ) : apiKey.isActive ? (
+                        <Badge variant="default">Active</Badge>
+                      ) : (
+                        <Badge variant="secondary">Inactive</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {apiKey.expiresAt ? (
+                        new Date(apiKey.expiresAt) < new Date() ? (
+                          <span className="text-red-500 font-medium">Expired</span>
+                        ) : new Date(apiKey.expiresAt).getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000 ? (
+                          <span className="text-orange-500">{new Date(apiKey.expiresAt).toLocaleDateString()}</span>
+                        ) : (
+                          <span className="text-muted-foreground">{new Date(apiKey.expiresAt).toLocaleDateString()}</span>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">Never</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
                       {apiKey.lastUsedAt
