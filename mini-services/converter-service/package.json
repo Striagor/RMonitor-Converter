@@ -1,0 +1,24 @@
+{
+  "name": "rmonitor-converter-service",
+  "version": "1.0.0",
+  "description": "RMonitor to WebJSON Converter Service",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "uuid": "^11.1.0",
+    "@prisma/client": "^6.5.0",
+    "mysql2": "^3.19.1",
+    "pg": "^8.14.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.14",
+    "@types/bun": "latest",
+    "@types/pg": "^8.11.0",
+    "bun-types": "latest",
+    "prisma": "^6.5.0"
+  }
+}

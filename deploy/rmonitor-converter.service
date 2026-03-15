@@ -1,0 +1,27 @@
+[Unit]
+Description=RMonitor Converter Service
+Documentation=https://github.com/Striagor/RMonitor-Converter
+After=network.target
+
+[Service]
+Type=simple
+User=rmonitor
+Group=rmonitor
+WorkingDirectory=/opt/rmonitor-converter/mini-services/converter-service
+ExecStart=/usr/local/bin/bun run dev
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/rmonitor-converter/logs/converter.log
+StandardError=append:/opt/rmonitor-converter/logs/converter-error.log
+
+# Environment
+Environment=NODE_ENV=production
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rmonitor-converter
+
+[Install]
+WantedBy=multi-user.target
