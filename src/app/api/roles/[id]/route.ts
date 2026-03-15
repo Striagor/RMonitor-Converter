@@ -15,6 +15,7 @@ async function notifyConverterRoleUpdate(roleId: string, updates: {
   allowedCommands?: string;
   canSend?: boolean;
   canReceive?: boolean;
+  maxConnections?: number;
 }) {
   try {
     const allowedCommands = updates.allowedCommands === "all" 
@@ -30,6 +31,7 @@ async function notifyConverterRoleUpdate(roleId: string, updates: {
         allowedCommands,
         canSend: updates.canSend,
         canReceive: updates.canReceive,
+        maxConnections: updates.maxConnections,
       }),
     });
   } catch (error) {
@@ -96,6 +98,7 @@ export async function PUT(
       allowedCommands: role.allowedCommands,
       canSend: role.canSend,
       canReceive: role.canReceive,
+      maxConnections: role.maxConnections,
     });
 
     return NextResponse.json({ success: true, data: role });

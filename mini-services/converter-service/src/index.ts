@@ -86,6 +86,7 @@ async function loadApiKeysFromDatabase(): Promise<void> {
           allowedCommands: role.allowedCommands === "all" ? "all" : role.allowedCommands.split(","),
           canSend: role.canSend,
           canReceive: role.canReceive,
+          maxConnections: role.maxConnections,
           connectedAt: new Date(),
           ipAddress: "",
           expiresAt: apiKey.expiresAt,

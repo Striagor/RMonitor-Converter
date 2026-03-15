@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
           allowedCommands: apiKey.role.allowedCommands === "all" ? "all" : apiKey.role.allowedCommands.split(","),
           canSend: apiKey.role.canSend,
           canReceive: apiKey.role.canReceive,
+          maxConnections: apiKey.role.maxConnections,
           expiresAt: apiKey.expiresAt?.toISOString() || null,
         });
       } catch (err) {

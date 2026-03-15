@@ -75,6 +75,7 @@ export const wsApi = {
     allowedCommands: string[] | "all";
     canSend: boolean;
     canReceive: boolean;
+    maxConnections: number;
     expiresAt?: string | null;
   }) =>
     fetchConverterApi<{ message: string }>("ws/apikeys", {

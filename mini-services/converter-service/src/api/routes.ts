@@ -187,6 +187,7 @@ const routes: Route[] = [
         allowedCommands: string[] | "all";
         canSend: boolean;
         canReceive: boolean;
+        maxConnections: number;
         expiresAt?: string | null;
       };
 
@@ -198,6 +199,7 @@ const routes: Route[] = [
         allowedCommands: data.allowedCommands,
         canSend: data.canSend,
         canReceive: data.canReceive,
+        maxConnections: data.maxConnections || 10,
         connectedAt: new Date(),
         ipAddress: "",
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
@@ -414,6 +416,7 @@ const routes: Route[] = [
         allowedCommands?: string[] | "all";
         canSend?: boolean;
         canReceive?: boolean;
+        maxConnections?: number;
       };
 
       if (!data.roleId) {
@@ -426,6 +429,7 @@ const routes: Route[] = [
         allowedCommands: data.allowedCommands,
         canSend: data.canSend,
         canReceive: data.canReceive,
+        maxConnections: data.maxConnections,
       });
 
       jsonResponse(res, {

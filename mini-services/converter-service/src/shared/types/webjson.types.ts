@@ -199,6 +199,7 @@ export interface WsClientInfo {
   allowedCommands: string[] | "all";
   canSend: boolean;
   canReceive: boolean;
+  maxConnections: number; // Max concurrent connections for this role
   connectedAt: Date;
   ipAddress: string;
   expiresAt?: Date | null; // Expiration date for the API key

@@ -183,10 +183,18 @@ class MultiWsServerManager {
       return;
     }
 
-    // Check max clients
+    // Check max clients (server limit)
     if (instance.clients.size >= instance.config.maxClients) {
       this.sendError(ws, "Server full");
       ws.close(4004, "Server full");
+      return;
+    }
+
+    // Check max connections for this role
+    const roleConnections = this.getRoleConnectionCount(clientInfo.roleId);
+    if (roleConnections >= clientInfo.maxConnections) {
+      this.sendError(ws, `Max connections (${clientInfo.maxConnections}) reached for role ${clientInfo.roleName}`);
+      ws.close(4007, "Max connections for role reached");
       return;
     }
 
@@ -547,6 +555,7 @@ class MultiWsServerManager {
     allowedCommands?: string[] | "all";
     canSend?: boolean;
     canReceive?: boolean;
+    maxConnections?: number;
   }): number {
     let updatedCount = 0;
     
@@ -557,8 +566,34 @@ class MultiWsServerManager {
       }
     }
     
+    // If maxConnections was updated, check if we need to disconnect excess clients
+    if (updates.maxConnections !== undefined) {
+      this.enforceMaxConnectionsForRole(roleId, updates.maxConnections);
+    }
+    
     console.log(`[WS] Updated ${updatedCount} clients for role ${roleId}`);
     return updatedCount;
+  }
+
+  /**
+   * Disconnect excess clients if role maxConnections is exceeded
+   */
+  private enforceMaxConnectionsForRole(roleId: string, maxConnections: number): void {
+    const roleClients = Array.from(this.allClients.values())
+      .filter(c => c.info.roleId === roleId)
+      .sort((a, b) => a.info.connectedAt.getTime() - b.info.connectedAt.getTime());
+    
+    if (roleClients.length > maxConnections) {
+      const excessCount = roleClients.length - maxConnections;
+      console.log(`[WS] Role ${roleId} has ${roleClients.length} connections, max is ${maxConnections}. Disconnecting ${excessCount} excess clients.`);
+      
+      // Disconnect the most recently connected clients (from the end of the sorted array)
+      for (let i = roleClients.length - 1; i >= maxConnections; i--) {
+        const client = roleClients[i];
+        console.log(`[WS] Disconnecting excess client ${client.id} (role: ${roleId})`);
+        client.ws.close(4007, "Max connections for role reached");
+      }
+    }
   }
 
   /**
@@ -566,6 +601,19 @@ class MultiWsServerManager {
    */
   getClientCount(): number {
     return this.allClients.size;
+  }
+
+  /**
+   * Get connection count for a specific role
+   */
+  private getRoleConnectionCount(roleId: string): number {
+    let count = 0;
+    for (const client of this.allClients.values()) {
+      if (client.info.roleId === roleId) {
+        count++;
+      }
+    }
+    return count;
   }
 
   /**
