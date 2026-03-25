@@ -1,0 +1,26 @@
+[Unit]
+Description=RMonitor Web Panel
+Documentation=https://github.com/Striagor/RMonitor-Converter
+After=network.target rmonitor-converter.service
+
+[Service]
+Type=simple
+User=rmonitor
+Group=rmonitor
+WorkingDirectory=/opt/rmonitor-converter
+ExecStart=/usr/local/bin/bun run dev
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Environment
+Environment=NODE_ENV=production
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/rmonitor-converter
+
+[Install]
+WantedBy=multi-user.target
