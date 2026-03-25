@@ -47,6 +47,10 @@ class CacheManager {
   private cacheDPD: Map<string, CacheEntry> = new Map();    // По DecoderID:RegNumber
   private cacheDSI: Map<string, CacheEntry> = new Map();    // По RegNumber
 
+  // Transponder index for $A - maps Transponder to cache key
+  // Used to remove old entries when Transponder is reassigned
+  private cacheATransponderIndex: Map<string, string> = new Map();
+
   private observers: Set<CacheObserver> = new Set();
 
   private constructor() {}
@@ -104,9 +108,26 @@ class CacheManager {
       case "C":
         this.cacheC.set(key, entry);
         break;
-      case "A":
+      case "A": {
+        // $A - Special handling: remove old entry if Transponder is reassigned
+        const msgA = message as { TransponderNumber?: string };
+        const transponder = msgA.TransponderNumber;
+        
+        if (transponder) {
+          // Check if this transponder was already assigned to a different key
+          const existingKey = this.cacheATransponderIndex.get(transponder);
+          if (existingKey && existingKey !== key) {
+            // Remove old entry - transponder was reassigned to a different car
+            console.log(`[Cache] $A: Transponder ${transponder} reassigned, removing old entry with key ${existingKey}`);
+            this.cacheA.delete(existingKey);
+          }
+          // Update transponder index
+          this.cacheATransponderIndex.set(transponder, key);
+        }
+        
         this.cacheA.set(key, entry);
         break;
+      }
       case "COMP":
         this.cacheCOMP.set(key, entry);
         break;
@@ -247,6 +268,7 @@ class CacheManager {
     this.cacheB.clear();
     this.cacheC.clear();
     this.cacheA.clear();
+    this.cacheATransponderIndex.clear(); // Clear transponder index too
     this.cacheCOMP.clear();
     this.cacheG.clear();
     this.cacheH.clear();
